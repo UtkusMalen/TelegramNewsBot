@@ -1,6 +1,11 @@
+import sys
+
 import aiogram
 import dotenv
-from aiogram import Dispatcher
+from aiogram import Bot, Dispatcher, types
+from aiogram.client import bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from dotenv import load_dotenv
@@ -12,6 +17,8 @@ from bs4 import BeautifulSoup
 import time
 import requests
 import nltk
+import asyncio
+import logging
 
 nltk.download('punkt_tab')
 
@@ -24,9 +31,68 @@ genai.configure(api_key=os.environ['GEMINI_API_KEY'])
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message):
-    await message.answer("Restarting...")
+    await message.reply("Bot started. Fetching news...")
+    await send_to_bot(message)
 
 @dp.message()
+async def send_to_bot(message: Message):
+    news_sites = [
+        "https://www.coindesk.com/",
+        # "https://cointelegraph.com/",
+        # "https://www.cryptonews.com/",
+        # "https://www.bitcoinmagazine.com/",
+        # "https://www.theblockcrypto.com/",
+        # "https://decrypt.co/",
+        # "https://www.newsbtc.com/",
+        # "https://u.today/",
+        # "https://www.coingape.com/",
+        # "https://beincrypto.com/"
+    ]
+
+    trending_news = []
+
+    for site in news_sites:
+        print(f"Scraping: {site}")
+        try:
+            paper = newspaper.build(site, memoize_articles=False)
+            for article in paper.articles[:5]:
+                time.sleep(1)
+                news_data = get_trending_news(article.url)
+                if is_valuable_news(news_data):
+                    trending_news.append(news_data)
+        except newspaper.article.ArticleException as e:
+            print(f"Error building paper for {site}: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"Network error building paper for {site}: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+
+    print("\nTrending Crypto News:")
+    if trending_news:
+        for news in trending_news:
+            gemini_summary = summarize_news(news['summary'])
+            image_url = get_article_image(news['url'])
+
+            message_text = f"<b>{news['title']}</b>\n"
+            message_text += f"<a href='{news['url']}'>Read more</a>\n"
+
+            if gemini_summary:
+                message_text += f"\n{gemini_summary}"
+            else:
+                print("Failed to summarize news. Please try again later.")
+
+            try:
+                if image_url:
+                    await bot.send_photo(chat_id=message.chat.id, photo=image_url, caption=message_text, parse_mode=ParseMode.HTML)
+                else:
+                    await message.reply(message_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            except aiogram.exceptions.TelegramBadRequest as e:
+                logging.error(f"Telegram Bad Request: {e}. Message Text: {message_text}")
+                await message.reply("Error sending message to Telegram. Likely issue with formatting.")
+            except Exception as e:
+                logging.exception(f"Error sending message to Telegram: {e}")
+    else:
+        print("No trending crypto news found.")
 
 def get_trending_news(url):
     try:
@@ -91,52 +157,10 @@ def get_article_image(url):
     except:
         return None
 
-news_sites = [
-    "https://www.coindesk.com/",
-    #"https://cointelegraph.com/",
-    #"https://www.cryptonews.com/",
-    #"https://www.bitcoinmagazine.com/",
-    #"https://www.theblockcrypto.com/",
-    #"https://decrypt.co/",
-    #"https://www.newsbtc.com/",
-    #"https://u.today/",
-    #"https://www.coingape.com/",
-    #"https://beincrypto.com/"
-]
+async def main():
+    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    await dp.start_polling(bot)
 
-trending_news = []
-
-for site in news_sites:
-    print(f"Scraping: {site}")
-    try:
-        paper = newspaper.build(site, memoize_articles=False)
-        for article in paper.articles[:5]:
-            time.sleep(1)
-            news_data = get_trending_news(article.url)
-            if is_valuable_news(news_data):
-                trending_news.append(news_data)
-    except newspaper.article.ArticleException as e:
-        print(f"Error building paper for {site}: {e}")
-    except requests.exceptions.RequestException as e:
-        print(f"Network error building paper for {site}: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-
-print("\nTrending Crypto News:")
-if trending_news:
-    for news in trending_news:
-        gemini_summary = summarize_news(news['summary'])
-        image_url = get_article_image(news['url'])
-
-        if gemini_summary:
-            print(f"\nTitle: {news['title']}")
-            print(f"URL: {news['url']}")
-            if image_url:
-                print(f"Image:{image_url}")
-            print(f"Summary: {gemini_summary}")
-        else:
-            print(f"\nTitle: {news['title']}")
-            print(f"URL: {news['url']}")
-            print("Failed to summarize news. Please try again later.")
-else:
-    print("No trending crypto news found.")
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    asyncio.run(main())
