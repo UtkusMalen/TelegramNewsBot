@@ -89,7 +89,6 @@ async def send_to_bot(message: Message):
                         buttons = InlineKeyboardMarkup(
                             inline_keyboard=[
                                 [
-                                    InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit:{news_id}"),
                                     InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{news_id}")
                                 ]
                             ]
@@ -111,77 +110,6 @@ async def send_to_bot(message: Message):
 
 class EditPostState(StatesGroup):
     waiting_for_new_content = State()
-
-@dp.callback_query(lambda c: c.data.startswith("edit:"))
-async def handle_edit(callback: CallbackQuery, state: FSMContext):
-    news_url = callback.data.split("edit:")[1]
-    current_caption = callback.message.caption
-    current_text = callback.message.text
-
-    buttons = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit:{news_url}"),
-                InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{news_url}"),
-            ]
-        ]
-    )
-    if current_caption:
-        await callback.message.edit_caption(
-            caption=f"{current_caption}\n📝 Please provide the new content for this post:",
-            reply_markup=buttons,
-            parse_mode=ParseMode.HTML
-        )
-    elif current_text:
-        await callback.message.edit_text(
-            text=f"{current_text}\n📝 Please provide the new content for this post:",
-            reply_markup=buttons,
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await callback.answer("This message cannot be edited.", show_alert=True)
-        return
-
-    await state.set_state(EditPostState.waiting_for_new_content)
-    await state.update_data(message_id=callback.message.message_id, news_url=news_url)
-
-@dp.message(EditPostState.waiting_for_new_content)
-async def handle_new_content(message: Message, state: FSMContext):
-    data = await state.get_data()
-    message_id = data.get("message_id")
-    news_url = data.get("news_url")
-    new_content = message.text
-
-    buttons = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit:{news_url}"),
-                InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{news_url}"),
-            ]
-        ]
-    )
-
-    try:
-        await message.bot.edit_message_caption(
-            chat_id=message.chat.id,
-            message_id=message_id,
-            caption=new_content,
-            parse_mode=ParseMode.HTML,
-            reply_markup=buttons
-        )
-    except aiogram.exceptions.TelegramBadRequest:
-        await message.bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=message_id,
-            text=new_content,
-            parse_mode=ParseMode.HTML,
-            reply_markup=buttons
-        )
-
-
-    await message.delete()
-
-    await state.clear()
 
 @dp.callback_query(lambda c: c.data.startswith("delete:"))
 async def handle_delete(callback: CallbackQuery):
