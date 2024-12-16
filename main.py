@@ -2,6 +2,7 @@ import sys
 
 import aiogram
 from aiogram import Bot, Dispatcher, html
+from aiogram import types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
@@ -25,25 +26,27 @@ import hashlib
 
 load_dotenv()
 
+
 dp = Dispatcher()
 
 TOKEN = os.getenv("BOT_TOKEN")
 genai.configure(api_key=os.environ['GEMINI_API_KEY'])
 
-@dp.message(CommandStart())
-async def command_start_handler(message: Message):
-    await message.reply("Bot started. Fetching news...")
-    await send_to_bot(message)
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 sent_news = set()
+
+news_cache = {}
+
+callback_data_cache = {}
 
 
 async def send_to_bot(message: Message):
     while True:
-        print(f"Checking for new news at {datetime.time()}...")
+        print(f"Checking for new news at {datetime.datetime.now()}...")
         try:
             news_sites = [
-                #"https://www.coindesk.com/",
+                "https://www.coindesk.com/",
                 "https://cointelegraph.com/",
                 # "https://www.cryptonews.com/",
                 # "https://www.bitcoinmagazine.com/",
@@ -63,10 +66,12 @@ async def send_to_bot(message: Message):
                     paper = newspaper.build(site, memoize_articles=False)
                     for article in paper.articles[:5]:
                         time.sleep(1)
-                        news_data = get_trending_news(article.url)
-                        if is_valuable_news(news_data):
-                            trending_news.append(news_data)
-                            sent_news.add(article.url)
+                        url = article.url
+                        if url not in sent_news and url not in news_cache:
+                            news_data = get_trending_news(url)
+                            if is_valuable_news(news_data):
+                                trending_news.append(news_data)
+                                sent_news.add(url)
                 except newspaper.article.ArticleException as e:
                     print(f"Error building paper for {site}: {e}")
                 except requests.exceptions.RequestException as e:
@@ -89,7 +94,9 @@ async def send_to_bot(message: Message):
                         buttons = InlineKeyboardMarkup(
                             inline_keyboard=[
                                 [
-                                    InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{news_id}")
+                                    InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{news_id}"),
+                                    InlineKeyboardButton(text="♻️ Regenerate", callback_data=f"regenerate:{news_id}"),
+                                    InlineKeyboardButton(text="📰 Publish", callback_data=f"publish:{news_id}")
                                 ]
                             ]
                         )
@@ -102,7 +109,7 @@ async def send_to_bot(message: Message):
                     except Exception as e:
                         logging.exception(f"Error sending message to Telegram: {e}")
             else:
-                print("No trending crypto news found.")
+                print(f"No trending crypto news found at {datetime.datetime.now()}")
         except Exception as e:
             logging.exception(f"Error in news fetching loop: {e}")
 
@@ -116,19 +123,82 @@ async def handle_delete(callback: CallbackQuery):
     await callback.message.delete()
     await callback.answer("🗑️ Post deleted.")
 
+@dp.callback_query(lambda c: c.data.startswith("regenerate:"))
+async def handle_regenerate(callback: CallbackQuery):
+    try:
+        _, news_id = callback.data.split(":")
+
+        url = None
+
+        for cached_url, news_data in news_cache.items():
+            if hashlib.md5(cached_url.encode()).hexdigest() == news_id:
+                url = cached_url
+                break
+
+        if not url:
+            await callback.answer("Failed to find news in cache.")
+            return
+
+        news_data = news_cache.get(url) or get_trending_news(url)
+        if not news_data or 'summary' not in news_data:
+            await callback.answer("Failed to find news in cache.")
+            return
+
+
+
+        gemini_summary = summarize_news(news_data['summary'], url)
+        if gemini_summary:
+            message_text = gemini_summary
+            await callback.message.edit_text(message_text, parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
+            await callback.answer("♻️ Post regenerated.")
+        else:
+            await callback.answer("Failed to summarize news. Please try again later.")
+            return
+
+    except Exception as e:
+        logging.exception(f"Error handling regenerate callback: {e}")
+        await callback.answer("Error regenerating post")
+
+@dp.callback_query(lambda c: c.data.startswith("publish:"))
+async def handle_publish(callback: CallbackQuery):
+    message = callback.message
+    if not message:
+        await callback.answer("Failed to find message.")
+        return
+
+    if message.photo:
+        photo = message.photo[-1].file_id
+        caption = message.html_text
+        sent_message = await bot.send_photo(chat_id=-1002346321511, photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+    elif message.html_text:
+        text = message.html_text
+        sent_message = await bot.send_message(chat_id=-1002346321511, text=text, parse_mode=ParseMode.HTML)
+    if sent_message:
+        await callback.message.delete()
+        await callback.answer("Published to channel")
+    else:
+        await callback.answer("Failed to publish to channel")
+
+
 def get_trending_news(url):
+    if url in news_cache:
+        print("Getting news from cache")
+        return news_cache[url]
+
     try:
         article = Article(url)
         article.download()
         article.parse()
         article.nlp()
-        return {
+        news_data = {
             'title': article.title,
             'text': article.text,
             'keywords': article.keywords,
             'summary': article.summary,
             'url': url
         }
+        news_cache[url] = news_data
+        return news_data
     except newspaper.article.ArticleException as e:
         print(f"Error parsing {url}: {e}")
         return None
@@ -179,7 +249,6 @@ def get_article_image(url):
         return None
 
 async def main():
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     asyncio.create_task(send_to_bot(bot))
     await dp.start_polling(bot)
 
