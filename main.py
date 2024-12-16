@@ -48,14 +48,9 @@ async def send_to_bot(message: Message):
             news_sites = [
                 "https://www.coindesk.com/",
                 "https://cointelegraph.com/",
-                "https://www.cryptonews.com/",
-                "https://www.bitcoinmagazine.com/",
-                "https://www.theblockcrypto.com/",
-                "https://decrypt.co/",
-                "https://www.newsbtc.com/",
-                "https://u.today/",
-                "https://www.coingape.com/",
-                "https://beincrypto.com/"
+                "https://decrypt.co/news",
+                "https://beincrypto.com/news/",
+                "https://www.theblock.co/latest"
             ]
 
             trending_news = []
@@ -89,6 +84,7 @@ async def send_to_bot(message: Message):
                         message_text = f"\n{gemini_summary}"
                     else:
                         print("Failed to summarize news. Please try again later.")
+                    await asyncio.sleep(10)
                     try:
                         news_id = hashlib.md5(news['url'].encode()).hexdigest()
                         buttons = InlineKeyboardMarkup(
@@ -149,7 +145,10 @@ async def handle_regenerate(callback: CallbackQuery):
         gemini_summary = summarize_news(news_data['summary'], url)
         if gemini_summary:
             message_text = gemini_summary
-            await callback.message.edit_text(message_text, parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
+            if callback.message.text:
+                await callback.message.edit_text(message_text, parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
+            elif callback.message.caption:
+                callback.message.edit_caption(caption=message_text, parse_mode=ParseMode.HTML,reply_markup=callback.message.reply_markup)
             await callback.answer("♻️ Post regenerated.")
         else:
             await callback.answer("Failed to summarize news. Please try again later.")
@@ -215,7 +214,7 @@ def is_valuable_news(article_data):
     text = article_data.get('text', '')
     title = article_data.get('title', '')
 
-    value_keywords = ["price", "market", "analysis", "regulation", "adoption", "investment", "blockchain", "DeFi", "NFT", "metaverse", "Bitcoin", "Ethereum", "USA", "Argentina", "Ton", "Telegram", "Gram"]
+    value_keywords = ["price", "market", "analysis", "regulation", "adoption", "investment", "blockchain", "DeFi", "Bitcoin", "Ethereum", "USA", "Argentina", "Ton", "Telegram", "Gram"]
     if any(keyword.lower() in text.lower() or keyword.lower() in title.lower() for keyword in value_keywords):
         return True
     return False
