@@ -48,14 +48,14 @@ async def send_to_bot(message: Message):
             news_sites = [
                 "https://www.coindesk.com/",
                 "https://cointelegraph.com/",
-                # "https://www.cryptonews.com/",
-                # "https://www.bitcoinmagazine.com/",
-                # "https://www.theblockcrypto.com/",
-                # "https://decrypt.co/",
-                # "https://www.newsbtc.com/",
-                # "https://u.today/",
-                # "https://www.coingape.com/",
-                # "https://beincrypto.com/"
+                "https://www.cryptonews.com/",
+                "https://www.bitcoinmagazine.com/",
+                "https://www.theblockcrypto.com/",
+                "https://decrypt.co/",
+                "https://www.newsbtc.com/",
+                "https://u.today/",
+                "https://www.coingape.com/",
+                "https://beincrypto.com/"
             ]
 
             trending_news = []
