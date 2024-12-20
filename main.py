@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 import newspaper
-from newspaper import Article
+from newspaper import Article, Config
 from bs4 import BeautifulSoup
 import time
 import requests
@@ -45,12 +45,15 @@ async def send_to_bot(message: Message):
     while True:
         print(f"Checking for new news at {datetime.datetime.now()}...")
         try:
+            config = Config()
+            config.browser_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            config.request_timeout = 10
             news_sites = [
                 "https://www.coindesk.com/",
                 "https://cointelegraph.com/",
-                "https://decrypt.co/news",
-                "https://beincrypto.com/news/",
-                "https://www.theblock.co/latest"
+                "https://decrypt.co/",
+                "https://beincrypto.com/",
+                "https://www.theblock.co/"
             ]
 
             trending_news = []
@@ -58,7 +61,7 @@ async def send_to_bot(message: Message):
             for site in news_sites:
                 print(f"Scraping: {site}")
                 try:
-                    paper = newspaper.build(site, memoize_articles=False)
+                    paper = newspaper.build(site, config=config, memoize_articles=False)
                     for article in paper.articles[:5]:
                         time.sleep(1)
                         url = article.url
@@ -79,6 +82,7 @@ async def send_to_bot(message: Message):
                 for news in trending_news:
                     gemini_summary = summarize_news(news['summary'], news['url'])
                     image_url = get_article_image(news['url'])
+                    asyncio.sleep(5)
 
                     if gemini_summary:
                         message_text = gemini_summary
