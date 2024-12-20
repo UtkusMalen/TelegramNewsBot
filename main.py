@@ -47,10 +47,10 @@ async def send_to_bot(message: Message):
         try:
             news_sites = [
                 "https://www.coindesk.com/",
-                "https://cointelegraph.com/",
-                "https://decrypt.co/news",
-                "https://beincrypto.com/news/",
-                "https://www.theblock.co/latest"
+                #"https://cointelegraph.com/",
+                #"https://decrypt.co/news",
+                #"https://beincrypto.com/news/",
+                #"https://www.theblock.co/latest"
             ]
 
             trending_news = []
@@ -81,10 +81,9 @@ async def send_to_bot(message: Message):
                     image_url = get_article_image(news['url'])
 
                     if gemini_summary:
-                        message_text = f"\n{gemini_summary}"
+                        message_text = gemini_summary
                     else:
                         print("Failed to summarize news. Please try again later.")
-                    await asyncio.sleep(10)
                     try:
                         news_id = hashlib.md5(news['url'].encode()).hexdigest()
                         buttons = InlineKeyboardMarkup(
@@ -144,11 +143,10 @@ async def handle_regenerate(callback: CallbackQuery):
 
         gemini_summary = summarize_news(news_data['summary'], url)
         if gemini_summary:
-            message_text = gemini_summary
             if callback.message.text:
-                await callback.message.edit_text(message_text, parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
+                await callback.message.edit_text(text=gemini_summary, parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
             elif callback.message.caption:
-                callback.message.edit_caption(caption=message_text, parse_mode=ParseMode.HTML,reply_markup=callback.message.reply_markup)
+                await callback.message.edit_caption(caption=gemini_summary, parse_mode=ParseMode.HTML,reply_markup=callback.message.reply_markup)
             await callback.answer("♻️ Post regenerated.")
         else:
             await callback.answer("Failed to summarize news. Please try again later.")
@@ -168,10 +166,10 @@ async def handle_publish(callback: CallbackQuery):
     if message.photo:
         photo = message.photo[-1].file_id
         caption = message.html_text
-        sent_message = await bot.send_photo(chat_id=-1002346321511, photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+        sent_message = await bot.send_photo(chat_id=-1002346321511, photo=photo, caption=f"{caption}\n\nhttps://t.me/wiretapnews", parse_mode=ParseMode.HTML)
     elif message.html_text:
         text = message.html_text
-        sent_message = await bot.send_message(chat_id=-1002346321511, text=text, parse_mode=ParseMode.HTML)
+        sent_message = await bot.send_message(chat_id=-1002346321511, text=f"{text}\n\nhttps://t.me/wiretapnews", parse_mode=ParseMode.HTML)
     if sent_message:
         await callback.message.delete()
         await callback.answer("Published to channel")
@@ -222,7 +220,7 @@ def is_valuable_news(article_data):
 def summarize_news(text_to_summarize, url):
     try:
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        response = model.generate_content(f"""Please summarize the following news article and format it using these HTML-like tags for Telegram: <b>bold</b>, <i>italic</i>, <u>underline</u>, <a href="URL">link</a>.Format the link using the provided URL: {url}.Do not generate invalid or placeholder links.Add emojis that fit the context and tone of the news.Apply formatting meaningfully to highlight key points, not randomly.Avoid addressing the audience directly.Conclude with a brief comment summarizing the significance of the news. Don't say things like: Here's a summary of the news article using the requested HTML-like tags and emojis and things like this. Paste links to sources where you get the news from. Keep the text short and focused, ensuring it delivers the core message effectively. Make it concise and engaging:\n\n{text_to_summarize}""")
+        response = model.generate_content(f"""Please summarize the following news article and format it using these HTML-like tags for Telegram: <b>bold</b>, <i>italic</i>, <u>underline</u>, <a href="URL">link</a>.Format the link using the provided URL: {url}.Do not generate invalid or placeholder links.Add some emojis that fit the context and tone of the news.Apply formatting meaningfully to highlight key points, not randomly.Avoid addressing the audience directly.Conclude with a brief comment summarizing the significance of the news. Don't say things like: Here's a summary of the news article using the requested HTML-like tags and emojis and things like this. Paste links to sources where you get the news from. Keep the text short and focused, ensuring it delivers the core message effectively.It should have title and main article.Make it concise and engaging:\n\n{text_to_summarize}""")
 
         return response.text
     except Exception as e:
