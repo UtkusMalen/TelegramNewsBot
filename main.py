@@ -25,6 +25,7 @@ import hashlib
 import nltk
 from datetime import datetime, timezone, timedelta
 import re
+from playwright.async_api import async_playwright
 
 load_dotenv()
 
@@ -47,26 +48,23 @@ callback_data_cache = {}
 async def send_to_bot(message: Message):
     while True:
         try:
-            user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'
+            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
             config = Config()
             config.browser_user_agent = user_agent
-            news_sites = [
-                "https://www.coindesk.com/",
-                "https://cointelegraph.com/",
-                "https://cointelegraph.com/tags/technology",
-                "https://cointelegraph.com/tags/regulation",
-                "https://cointelegraph.com/tags/business",
-                "https://cryptoslate.com/top-news/",
-                "https://bitcoinmagazine.com/",
-                "https://www.newsbtc.com/",
-                "https://www.theblock.co/",
-                "https://x.com/cointelegraph",
-                "https://www.bloomberg.com"
+            static_sites = [
+                "https://www.coindesk.com",
+                "https://cryptoslate.com/top-news/"
+            ]
+            dynamic_sites = [
+                "https://cointelegraph.com",
+                "https://www.newsbtc.com",
+                "https://www.ft.com/markets",
+                "https://www.financemagnates.com/"
             ]
 
             trending_news = []
 
-            for site in news_sites:
+            for site in static_sites:
                 print(f"Scraping: {site}")
                 try:
                     paper = newspaper.build(site, config=config, language='en')
@@ -84,6 +82,19 @@ async def send_to_bot(message: Message):
                     print(f"Network error building paper for {site}: {e}")
                 except Exception as e:
                     print(f"An unexpected error occurred: {e}")
+
+            for site in dynamic_sites:
+                print(f"Scraping dynamic site: {site}")
+                try:
+                    links = await fetch_valid_links(site)
+                    for link in links[:5]:
+                        print(link)
+                        if link not in news_cache:
+                            news_data = get_trending_news(link)
+                            if news_data:
+                                trending_news.append(news_data)
+                except Exception as e:
+                    print(f"Error scraping {site} with Playwright: {e}")
 
             print("\nTrending Crypto News:")
             if trending_news:
@@ -125,6 +136,27 @@ async def send_to_bot(message: Message):
             logging.exception(f"Error in news fetching loop: {e}")
 
         await asyncio.sleep(1800)
+
+async def fetch_valid_links(url):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+        page = await context.new_page()
+
+        try:
+            await page.goto(url, timeout=30000)
+            links = await page.eval_on_selector_all(
+                "a", "elements => elements.map(el => el.href)"
+            )
+
+            valid_links = list({
+                link for link in links
+                if "news" in link and not ("/category/" in link or "/latest-news" in link) or "economics" in link or "technology" in link or "markets" in link
+            })
+            return valid_links
+
+        finally:
+            await browser.close()
 
 
 class EditPostState(StatesGroup):
