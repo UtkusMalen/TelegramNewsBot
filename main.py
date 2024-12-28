@@ -26,6 +26,7 @@ import nltk
 from datetime import datetime, timezone, timedelta
 import re
 from playwright.async_api import async_playwright
+import subprocess
 
 load_dotenv()
 
@@ -43,6 +44,9 @@ sent_news = set()
 news_cache = {}
 
 callback_data_cache = {}
+
+subprocess.run(["pip", "install", "playwright"], check=True)
+subprocess.run(["python", "-m", "playwright", "install"], check=True)
 
 
 async def send_to_bot(message: Message):
