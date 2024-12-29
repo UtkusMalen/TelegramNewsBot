@@ -3,5 +3,6 @@ protobuf~=5.29.1
 newspaper3k~=0.2.8
 requests~=2.32.3
 asyncio~=3.4.3
+nltk~=3.9.1
 python-dotenv~=1.0.1
 beautifulsoup4~=4.12.3
