@@ -13,9 +13,9 @@ from aiogram.fsm.state import StatesGroup, State
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
+from bs4 import BeautifulSoup
 import newspaper
 from newspaper import Article, Config
-from bs4 import BeautifulSoup
 import time
 import requests
 import asyncio
@@ -25,8 +25,6 @@ import hashlib
 import nltk
 from datetime import datetime, timezone, timedelta
 import re
-from playwright.async_api import async_playwright
-import subprocess
 
 load_dotenv()
 
@@ -45,60 +43,46 @@ news_cache = {}
 
 callback_data_cache = {}
 
-subprocess.run(["pip", "install", "playwright"], check=True)
-subprocess.run(["python", "-m", "playwright", "install"], check=True)
-
-
 async def send_to_bot(message: Message):
     while True:
         try:
-            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+            user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'
             config = Config()
             config.browser_user_agent = user_agent
-            static_sites = [
-                "https://www.coindesk.com",
-                "https://cryptoslate.com/top-news/"
-            ]
-            dynamic_sites = [
-                "https://cointelegraph.com",
-                "https://www.newsbtc.com",
-                "https://www.ft.com/markets",
-                "https://www.financemagnates.com/"
+            config.request_timeout = 10
+            news_sites = [
+                "https://www.coindesk.com/",
+                "https://cointelegraph.com/",
+                "https://cryptoslate.com/top-news/",
+                "https://bitcoinmagazine.com/",
+                "https://www.newsbtc.com/",
+                "https://www.theblock.co/"
             ]
 
             trending_news = []
 
-            for site in static_sites:
+            for site in news_sites:
                 print(f"Scraping: {site}")
                 try:
-                    paper = newspaper.build(site, config=config, language='en')
+                    paper = newspaper.build(site, config=config, language='en', memoize_articles=False)
+
+                    if not paper.articles:
+                        print(f"No articles found for {site}.")
+                        continue
                     for article in paper.articles[:5]:
-                        print(article.url)
                         url = article.url
+                        print(url)
                         if url not in sent_news and url not in news_cache:
                             news_data = get_trending_news(url)
                             if is_valuable_news(news_data):
                                 trending_news.append(news_data)
                                 sent_news.add(url)
-                except newspaper.article.ArticleException as e:
+                except newspaper.ArticleBinaryDataException as e:
                     print(f"Error building paper for {site}: {e}")
                 except requests.exceptions.RequestException as e:
                     print(f"Network error building paper for {site}: {e}")
                 except Exception as e:
                     print(f"An unexpected error occurred: {e}")
-
-            for site in dynamic_sites:
-                print(f"Scraping dynamic site: {site}")
-                try:
-                    links = await fetch_valid_links(site)
-                    for link in links[:5]:
-                        print(link)
-                        if link not in news_cache:
-                            news_data = get_trending_news(link)
-                            if news_data:
-                                trending_news.append(news_data)
-                except Exception as e:
-                    print(f"Error scraping {site} with Playwright: {e}")
 
             print("\nTrending Crypto News:")
             if trending_news:
@@ -141,27 +125,6 @@ async def send_to_bot(message: Message):
 
         await asyncio.sleep(1800)
 
-async def fetch_valid_links(url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
-        page = await context.new_page()
-
-        try:
-            await page.goto(url, timeout=30000)
-            links = await page.eval_on_selector_all(
-                "a", "elements => elements.map(el => el.href)"
-            )
-
-            valid_links = list({
-                link for link in links
-                if "news" in link and not ("/category/" in link or "/latest-news" in link) or "economics" in link or "technology" in link or "markets" in link
-            })
-            return valid_links
-
-        finally:
-            await browser.close()
-
 
 class EditPostState(StatesGroup):
     waiting_for_new_content = State()
@@ -200,11 +163,8 @@ async def handle_regenerate(callback: CallbackQuery):
         gemini_summary = summarize_news(news_data['text'], url, news_data['links'])
         if gemini_summary:
             if callback.message.text:
-                await callback.message.edit_text(text=f"{gemini_summary}\n\n{publish_date}", parse_mode=ParseMode.HTML,
+                await callback.message.edit_text(text=f"<a href='{image_url}'>‎</a> {gemini_summary}\n\n{publish_date}", parse_mode=ParseMode.HTML,
                                                  reply_markup=callback.message.reply_markup)
-            elif callback.message.caption:
-                await callback.message.edit_text(text=f"<a href='{image_url}'>‎</a> {gemini_summary}\n\n{publish_date}",
-                                                 parse_mode=ParseMode.HTML, reply_markup=callback.message.reply_markup)
             await callback.answer("♻️ Post regenerated.")
         else:
             await callback.answer("Failed to summarize news. Please try again later.")
@@ -279,7 +239,7 @@ def get_trending_news(url):
         }
         news_cache[url] = news_data
         return news_data
-    except newspaper.article.ArticleException as e:
+    except newspaper.ArticleBinaryDataException as e:
         print(f"Error parsing {url}: {e}")
         return None
     except requests.exceptions.RequestException as e:
